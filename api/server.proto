@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package go_1C;
+
+option go_package = "go_1C/api";
+
+service Service {
+	rpc GetPosts(GetPostsReq) returns (GetPostsRsp) {}
+    rpc CreatePost(CreatePostReq) returns (CreatePostRsp) {}
+    rpc EditPost(EditPostReq) returns (EditPostRsp) {}
+    rpc DeletePost(DeletePostReq) returns (DeletePostRsp) {}
+    rpc LikePost(LikePostReq) returns (LikePostRsp) {}
+    rpc DislikePost(DislikePostReq) returns (DislikePostRsp) {}
+    rpc GetComments(GetCommentsReq) returns (GetCommentsRsp) {}
+    rpc CreateComment(CreateCommentReq) returns (CreateCommentRsp) {}
+    rpc EditComment(EditCommentReq) returns (EditCommentRsp) {}
+    rpc DeleteComment(DeleteCommentReq) returns (DeleteCommentRsp) {}
+    rpc LikeComment(LikeCommentReq) returns (LikeCommentRsp) {}
+    rpc DislikeComment(DislikeCommentReq) returns (DislikeCommentRsp) {}
+}
+
+message UserInfo {
+    int64 id = 1;
+    string name = 2;
+}
+
+message PostBody {
+    string title = 1;
+    string body = 2;
+}
+
+message Post {
+    int64 id = 1;
+    PostBody post = 2;
+    UserInfo author = 3;
+    int64 likes = 4;
+    bool is_liked = 5;
+}
+
+message Comment {
+    int64 id = 1;
+    int64 post_id = 2;
+    UserInfo author = 3;
+    string body = 4;
+    int64 likes = 5;
+    bool is_liked = 6;
+}
+
+message GetPostsReq {
+    int64 user_id = 1;
+    int64 offset = 2;
+    int64 limit = 3;
+}
+
+message GetPostsRsp {
+    repeated Post posts = 1;
+}
+
+message CreatePostReq {
+    int64 user_id = 1;
+    PostBody post = 2;
+}
+
+message CreatePostRsp {
+}
+
+message EditPostReq {
+    int64 user_id = 1;
+    int64 post_id = 2;
+    PostBody post = 3;
+}
+
+message EditPostRsp {
+}
+
+message DeletePostReq {
+    int64 user_id = 1;
+    int64 post_id = 2;
+}
+
+message DeletePostRsp {
+}
+
+message LikePostReq {
+    int64 user_id = 1;
+    int64 post_id = 2;
+}
+
+message LikePostRsp {
+}
+
+message DislikePostReq {
+    int64 user_id = 1;
+    int64 post_id = 2;
+}
+
+message DislikePostRsp {
+}
+
+message GetCommentsReq {
+    int64 user_id = 1;
+    int64 offset = 2;
+    int64 limit = 3;
+}
+
+message GetCommentsRsp {
+    repeated Comment comments = 1;
+}
+
+message CreateCommentReq {
+    int64 user_id = 1;
+    int64 post_id = 2;
+    string body = 3;
+}
+
+message CreateCommentRsp {
+}
+
+message EditCommentReq {
+    int64 user_id = 1;
+    int64 comment_id = 2;
+    string body = 3;
+}
+
+message EditCommentRsp {
+}
+
+message DeleteCommentReq {
+    int64 user_id = 1;
+    int64 comment_id = 2;
+}
+
+message DeleteCommentRsp {
+}
+
+message LikeCommentReq {
+    int64 user_id = 1;
+    int64 comment_id = 2;
+}
+
+message LikeCommentRsp {
+}
+
+message DislikeCommentReq {
+    int64 user_id = 1;
+    int64 comment_id = 2;
+}
+
+message DislikeCommentRsp {
+}
