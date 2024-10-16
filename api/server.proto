@@ -62,6 +62,7 @@ message CreatePostReq {
 }
 
 message CreatePostRsp {
+    Post post = 1;
 }
 
 message EditPostReq {
@@ -71,6 +72,7 @@ message EditPostReq {
 }
 
 message EditPostRsp {
+    Post post = 1;
 }
 
 message DeletePostReq {
@@ -114,6 +116,7 @@ message CreateCommentReq {
 }
 
 message CreateCommentRsp {
+    Comment comment = 1;
 }
 
 message EditCommentReq {
@@ -123,6 +126,7 @@ message EditCommentReq {
 }
 
 message EditCommentRsp {
+    Comment comment = 1;
 }
 
 message DeleteCommentReq {
