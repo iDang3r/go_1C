@@ -2,15 +2,20 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
+	"net/http"
 	"slices"
 
 	api "go_1C/api"
 
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"golang.org/x/exp/rand"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 )
@@ -49,7 +54,7 @@ func (s *Service) CreatePost(
 	log.Println("User:", req.UserId, "callded CreatePost")
 
 	posts = append(posts, &api.Post{Id: posts[len(posts)-1].Id + 1, Post: req.Post, Author: users[req.UserId]})
-	return &api.CreatePostRsp{}, nil
+	return &api.CreatePostRsp{Post: posts[len(posts)-1]}, nil
 }
 
 func (s *Service) EditPost(
@@ -154,6 +159,12 @@ func genMockData() {
 	}
 }
 
+//go:embed api/api.swagger.json
+var swaggerData []byte
+
+//go:embed swagger-ui
+var swaggerFiles embed.FS
+
 func main() {
 	genMockData()
 
@@ -169,8 +180,45 @@ func main() {
 	api.RegisterServiceServer(grpcServer, s)
 	reflection.Register(grpcServer)
 
-	log.Println("gRPC server started on :50051")
-	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
+	go func() {
+		log.Println("gRPC server started on :50051")
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("Failed to serve: %v", err)
+		}
+	}()
+
+	conn, err := grpc.NewClient(":50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalln("Failed to dial server:", err)
 	}
+
+	gwmux := runtime.NewServeMux()
+
+	ctx := context.Background()
+	if err := api.RegisterServiceHandler(ctx, gwmux, conn); err != nil {
+		log.Fatalln("Failed to register gateway:", err)
+	}
+
+	mux := http.NewServeMux()
+
+	mux.Handle("/", gwmux)
+
+	mux.HandleFunc("/swagger-ui/swagger.json", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(swaggerData)
+	})
+
+	fSys, err := fs.Sub(swaggerFiles, "swagger-ui")
+	if err != nil {
+		panic(err)
+	}
+
+	mux.Handle("/swagger-ui/", http.StripPrefix("/swagger-ui/", http.FileServer(http.FS(fSys))))
+
+	gwServer := &http.Server{
+		Addr:    ":8090",
+		Handler: mux,
+	}
+
+	log.Println("Serving gRPC-Gateway on http://0.0.0.0:8090")
+	log.Fatalln(gwServer.ListenAndServe())
 }

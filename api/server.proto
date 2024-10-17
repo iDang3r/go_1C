@@ -2,21 +2,82 @@ syntax = "proto3";
 
 package go_1C;
 
+import "google/api/annotations.proto";
+
 option go_package = "go_1C/api";
 
 service Service {
-	rpc GetPosts(GetPostsReq) returns (GetPostsRsp) {}
-    rpc CreatePost(CreatePostReq) returns (CreatePostRsp) {}
-    rpc EditPost(EditPostReq) returns (EditPostRsp) {}
-    rpc DeletePost(DeletePostReq) returns (DeletePostRsp) {}
-    rpc LikePost(LikePostReq) returns (LikePostRsp) {}
-    rpc DislikePost(DislikePostReq) returns (DislikePostRsp) {}
-    rpc GetComments(GetCommentsReq) returns (GetCommentsRsp) {}
-    rpc CreateComment(CreateCommentReq) returns (CreateCommentRsp) {}
-    rpc EditComment(EditCommentReq) returns (EditCommentRsp) {}
-    rpc DeleteComment(DeleteCommentReq) returns (DeleteCommentRsp) {}
-    rpc LikeComment(LikeCommentReq) returns (LikeCommentRsp) {}
-    rpc DislikeComment(DislikeCommentReq) returns (DislikeCommentRsp) {}
+	rpc GetPosts(GetPostsReq) returns (GetPostsRsp) {
+        option (google.api.http) = {
+            get: "/get-posts"
+        };
+    }
+    rpc CreatePost(CreatePostReq) returns (CreatePostRsp) {
+        option (google.api.http) = {
+            post: "/create-post"
+            body: "*"
+        };
+    }
+    rpc EditPost(EditPostReq) returns (EditPostRsp) {
+        option (google.api.http) = {
+            post: "/edit-post"
+            body: "*"
+        };
+    }
+    rpc DeletePost(DeletePostReq) returns (DeletePostRsp) {
+        option (google.api.http) = {
+            post: "/delete-post"
+            body: "*"
+        };
+    }
+    rpc LikePost(LikePostReq) returns (LikePostRsp) {
+        option (google.api.http) = {
+            post: "/like-post"
+            body: "*"
+        };
+    }
+    rpc DislikePost(DislikePostReq) returns (DislikePostRsp) {
+        option (google.api.http) = {
+            post: "/dislike-post"
+            body: "*"
+        };
+    }
+    rpc GetComments(GetCommentsReq) returns (GetCommentsRsp) {
+        option (google.api.http) = {
+            post: "/get-comments"
+            body: "*"
+        };
+    }
+    rpc CreateComment(CreateCommentReq) returns (CreateCommentRsp) {
+        option (google.api.http) = {
+            post: "/create-comment"
+            body: "*"
+        };
+    }
+    rpc EditComment(EditCommentReq) returns (EditCommentRsp) {
+        option (google.api.http) = {
+            post: "/edit-comment"
+            body: "*"
+        };
+    }
+    rpc DeleteComment(DeleteCommentReq) returns (DeleteCommentRsp) {
+        option (google.api.http) = {
+            post: "/delete-comment"
+            body: "*"
+        };
+    }
+    rpc LikeComment(LikeCommentReq) returns (LikeCommentRsp) {
+        option (google.api.http) = {
+            post: "/like-comment"
+            body: "*"
+        };
+    }
+    rpc DislikeComment(DislikeCommentReq) returns (DislikeCommentRsp) {
+        option (google.api.http) = {
+            post: "/dislike-comment"
+            body: "*"
+        };
+    }
 }
 
 message UserInfo {
