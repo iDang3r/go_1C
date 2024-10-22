@@ -81,7 +81,7 @@
       }
     },
     "/delete-comment": {
-      "post": {
+      "delete": {
         "operationId": "Service_DeleteComment",
         "responses": {
           "200": {
@@ -99,12 +99,18 @@
         },
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/go_1CDeleteCommentReq"
-            }
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "commentId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -113,7 +119,7 @@
       }
     },
     "/delete-post": {
-      "post": {
+      "delete": {
         "operationId": "Service_DeletePost",
         "responses": {
           "200": {
@@ -131,12 +137,18 @@
         },
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/go_1CDeletePostReq"
-            }
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "postId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -145,7 +157,7 @@
       }
     },
     "/dislike-comment": {
-      "post": {
+      "delete": {
         "operationId": "Service_DislikeComment",
         "responses": {
           "200": {
@@ -163,12 +175,18 @@
         },
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/go_1CDislikeCommentReq"
-            }
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "commentId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -177,7 +195,7 @@
       }
     },
     "/dislike-post": {
-      "post": {
+      "delete": {
         "operationId": "Service_DislikePost",
         "responses": {
           "200": {
@@ -195,12 +213,18 @@
         },
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/go_1CDislikePostReq"
-            }
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "postId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -209,7 +233,7 @@
       }
     },
     "/edit-comment": {
-      "post": {
+      "put": {
         "operationId": "Service_EditComment",
         "responses": {
           "200": {
@@ -241,7 +265,7 @@
       }
     },
     "/edit-post": {
-      "post": {
+      "put": {
         "operationId": "Service_EditPost",
         "responses": {
           "200": {
@@ -273,7 +297,7 @@
       }
     },
     "/get-comments": {
-      "post": {
+      "get": {
         "operationId": "Service_GetComments",
         "responses": {
           "200": {
@@ -291,12 +315,25 @@
         },
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/go_1CGetCommentsReq"
-            }
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -485,66 +522,14 @@
         }
       }
     },
-    "go_1CDeleteCommentReq": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "format": "int64"
-        },
-        "commentId": {
-          "type": "string",
-          "format": "int64"
-        }
-      }
-    },
     "go_1CDeleteCommentRsp": {
       "type": "object"
-    },
-    "go_1CDeletePostReq": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "format": "int64"
-        },
-        "postId": {
-          "type": "string",
-          "format": "int64"
-        }
-      }
     },
     "go_1CDeletePostRsp": {
       "type": "object"
     },
-    "go_1CDislikeCommentReq": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "format": "int64"
-        },
-        "commentId": {
-          "type": "string",
-          "format": "int64"
-        }
-      }
-    },
     "go_1CDislikeCommentRsp": {
       "type": "object"
-    },
-    "go_1CDislikePostReq": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "format": "int64"
-        },
-        "postId": {
-          "type": "string",
-          "format": "int64"
-        }
-      }
     },
     "go_1CDislikePostRsp": {
       "type": "object"
@@ -594,23 +579,6 @@
       "properties": {
         "post": {
           "$ref": "#/definitions/go_1CPost"
-        }
-      }
-    },
-    "go_1CGetCommentsReq": {
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "format": "int64"
-        },
-        "offset": {
-          "type": "string",
-          "format": "int64"
-        },
-        "limit": {
-          "type": "string",
-          "format": "int64"
         }
       }
     },

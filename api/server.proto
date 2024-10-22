@@ -20,14 +20,13 @@ service Service {
     }
     rpc EditPost(EditPostReq) returns (EditPostRsp) {
         option (google.api.http) = {
-            post: "/edit-post"
+            put: "/edit-post"
             body: "*"
         };
     }
     rpc DeletePost(DeletePostReq) returns (DeletePostRsp) {
         option (google.api.http) = {
-            post: "/delete-post"
-            body: "*"
+            delete: "/delete-post"
         };
     }
     rpc LikePost(LikePostReq) returns (LikePostRsp) {
@@ -38,14 +37,12 @@ service Service {
     }
     rpc DislikePost(DislikePostReq) returns (DislikePostRsp) {
         option (google.api.http) = {
-            post: "/dislike-post"
-            body: "*"
+            delete: "/dislike-post"
         };
     }
     rpc GetComments(GetCommentsReq) returns (GetCommentsRsp) {
         option (google.api.http) = {
-            post: "/get-comments"
-            body: "*"
+            get: "/get-comments"
         };
     }
     rpc CreateComment(CreateCommentReq) returns (CreateCommentRsp) {
@@ -56,14 +53,13 @@ service Service {
     }
     rpc EditComment(EditCommentReq) returns (EditCommentRsp) {
         option (google.api.http) = {
-            post: "/edit-comment"
+            put: "/edit-comment"
             body: "*"
         };
     }
     rpc DeleteComment(DeleteCommentReq) returns (DeleteCommentRsp) {
         option (google.api.http) = {
-            post: "/delete-comment"
-            body: "*"
+            delete: "/delete-comment"
         };
     }
     rpc LikeComment(LikeCommentReq) returns (LikeCommentRsp) {
@@ -74,8 +70,7 @@ service Service {
     }
     rpc DislikeComment(DislikeCommentReq) returns (DislikeCommentRsp) {
         option (google.api.http) = {
-            post: "/dislike-comment"
-            body: "*"
+            delete: "/dislike-comment"
         };
     }
 }
