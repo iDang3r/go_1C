@@ -8,25 +8,27 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"slices"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	api "go_1C/api"
+	"go_1C/models"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"golang.org/x/exp/rand"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 )
 
-var rnd = rand.New(rand.NewSource(99))
+//go:embed api/api.swagger.json
+var swaggerData []byte
 
-var posts = make([]*api.Post, 0)
-var users = make([]*api.UserInfo, 0)
+//go:embed swagger-ui
+var swaggerFiles embed.FS
 
-// post_id -> [user_ids]
-var likes = make(map[int64][]int64)
+var db *gorm.DB
 
 type Service struct {
 	api.UnimplementedServiceServer
@@ -37,12 +39,21 @@ func (s *Service) GetPosts(
 ) (*api.GetPostsRsp, error) {
 	log.Println("User:", req.UserId, "callded GetPosts")
 
-	l := max(0, req.Offset)
-	r := min(len(posts), int(req.Offset+req.Limit))
-	posts_rsp := posts[l:r]
-	for _, post := range posts_rsp {
-		post.Likes = int64(len(likes[post.Id]))
-		post.IsLiked = slices.Contains(likes[post.Id], req.UserId)
+	var posts []models.Post
+	if err := db.Preload("Author").Offset(int(req.Offset)).Limit(int(req.Limit)).Find(&posts).Error; err != nil {
+		return &api.GetPostsRsp{}, status.Error(1, err.Error())
+	}
+
+	var posts_rsp []*api.Post
+	for _, post := range posts {
+		posts_rsp = append(posts_rsp,
+			&api.Post{
+				Id:      int64(post.ID),
+				Post:    &api.PostBody{Title: post.Title, Body: post.Body},
+				Author:  &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
+				Likes:   0,
+				IsLiked: false,
+			})
 	}
 
 	return &api.GetPostsRsp{Posts: posts_rsp}, nil
@@ -53,8 +64,20 @@ func (s *Service) CreatePost(
 ) (*api.CreatePostRsp, error) {
 	log.Println("User:", req.UserId, "callded CreatePost")
 
-	posts = append(posts, &api.Post{Id: posts[len(posts)-1].Id + 1, Post: req.Post, Author: users[req.UserId]})
-	return &api.CreatePostRsp{Post: posts[len(posts)-1]}, nil
+	new_post := &models.Post{Title: req.Post.Title, Body: req.Post.Body, AuthorID: uint(req.UserId)}
+
+	if err := db.Preload("Author").Create(&new_post).First(&new_post).Error; err != nil {
+		return &api.CreatePostRsp{}, status.Error(1, err.Error())
+	}
+
+	return &api.CreatePostRsp{
+		Post: &api.Post{
+			Id:      int64(new_post.ID),
+			Post:    &api.PostBody{Title: new_post.Title, Body: new_post.Body},
+			Author:  &api.UserInfo{Id: int64(new_post.Author.ID), Name: new_post.Author.Name},
+			Likes:   0,
+			IsLiked: false,
+		}}, nil
 }
 
 func (s *Service) EditPost(
@@ -62,111 +85,236 @@ func (s *Service) EditPost(
 ) (*api.EditPostRsp, error) {
 	log.Println("User:", req.UserId, "callded EditPost")
 
-	for _, post := range posts {
-		if post.Id == req.PostId {
-			if post.Author.Id != req.UserId {
-				return &api.EditPostRsp{}, status.Error(1, "You are not the author!")
-			}
-			post.Post = req.Post
-			return &api.EditPostRsp{}, nil
-		}
+	var post *models.Post
+	if err := db.Where("ID = ?", req.PostId).Preload("Author").First(&post).Error; err != nil {
+		return &api.EditPostRsp{}, status.Error(1, err.Error())
 	}
 
-	return &api.EditPostRsp{}, status.Error(1, "Post not found")
+	if post.AuthorID != uint(req.UserId) {
+		return &api.EditPostRsp{}, status.Error(1, "You are not the author!")
+	}
+
+	post.Title = req.Post.Title
+	post.Body = req.Post.Body
+
+	if err := db.Save(&post).Error; err != nil {
+		return &api.EditPostRsp{}, status.Error(1, err.Error())
+	}
+
+	return &api.EditPostRsp{
+		Post: &api.Post{
+			Id:      int64(post.ID),
+			Post:    &api.PostBody{Title: post.Title, Body: post.Body},
+			Author:  &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
+			Likes:   0,
+			IsLiked: false,
+		},
+	}, nil
 }
 
-func DeletePost(ctx context.Context, req *api.DeletePostReq) (*api.DeletePostRsp, error) {
+func (s *Service) DeletePost(ctx context.Context, req *api.DeletePostReq) (*api.DeletePostRsp, error) {
 	log.Println("User:", req.UserId, "callded DeletePost")
 
-	for _, post := range posts {
-		if post.Id == req.PostId {
-			if post.Author.Id != req.UserId {
-				return &api.DeletePostRsp{}, status.Error(1, "You are not the author!")
-			}
-			posts = slices.DeleteFunc(posts, func(p *api.Post) bool {
-				return post.Id == p.Id
-			})
-			return &api.DeletePostRsp{}, nil
-		}
+	var post *models.Post
+	if err := db.Where("ID = ?", req.PostId).First(&post).Error; err != nil {
+		return &api.DeletePostRsp{}, status.Error(1, err.Error())
 	}
 
-	return &api.DeletePostRsp{}, status.Error(1, "Post not found")
+	if post.AuthorID != uint(req.UserId) {
+		return &api.DeletePostRsp{}, status.Error(1, "You are not the author!")
+	}
+
+	if err := db.Delete(&post).Error; err != nil {
+		return &api.DeletePostRsp{}, status.Error(1, err.Error())
+	}
+
+	return &api.DeletePostRsp{}, nil
 }
 
-func LikePost(ctx context.Context, req *api.LikePostReq) (*api.LikePostRsp, error) {
+func (s *Service) LikePost(ctx context.Context, req *api.LikePostReq) (*api.LikePostRsp, error) {
 	log.Println("User:", req.UserId, "callded LikePost")
-	if slices.Contains(likes[req.PostId], req.UserId) {
-		return &api.LikePostRsp{}, status.Error(1, "Already liked")
-	}
 
-	likes[req.PostId] = append(likes[req.PostId], req.UserId)
 	return &api.LikePostRsp{}, nil
 }
 
-func DislikePost(ctx context.Context, req *api.DislikePostReq) (*api.DislikePostRsp, error) {
+func (s *Service) DislikePost(ctx context.Context, req *api.DislikePostReq) (*api.DislikePostRsp, error) {
 	log.Println("User:", req.UserId, "callded DislikePost")
 
-	likes[req.PostId] = slices.DeleteFunc(likes[req.PostId], func(id int64) bool {
-		return id == req.UserId
-	})
 	return &api.DislikePostRsp{}, nil
 }
 
-func GetComments(ctx context.Context, req *api.GetCommentsReq) (*api.GetCommentsRsp, error) {
+func (s *Service) GetComments(ctx context.Context, req *api.GetCommentsReq) (*api.GetCommentsRsp, error) {
 	log.Println("User:", req.UserId, "callded GetComments")
-	return &api.GetCommentsRsp{}, nil
+
+	var comments []models.Comment
+	if err := db.Where("post_refer = ?", req.PostId).Offset(int(req.Offset)).Limit(int(req.Limit)).Preload("Author").Find(&comments).Error; err != nil {
+		return &api.GetCommentsRsp{}, status.Error(1, err.Error())
+	}
+
+	var comments_rsp []*api.Comment
+	for _, comment := range comments {
+		comments_rsp = append(comments_rsp,
+			&api.Comment{
+				Id:      int64(comment.ID),
+				PostId:  int64(comment.PostRefer),
+				Author:  &api.UserInfo{Id: int64(comment.Author.ID), Name: comment.Author.Name},
+				Body:    comment.Body,
+				Likes:   0,
+				IsLiked: false,
+			})
+	}
+
+	return &api.GetCommentsRsp{Comments: comments_rsp}, nil
 }
 
-func CreateComment(ctx context.Context, req *api.CreateCommentReq) (*api.CreateCommentRsp, error) {
+func (s *Service) CreateComment(ctx context.Context, req *api.CreateCommentReq) (*api.CreateCommentRsp, error) {
 	log.Println("User:", req.UserId, "callded CreateComment")
-	return &api.CreateCommentRsp{}, nil
+
+	new_comment := &models.Comment{PostRefer: uint(req.PostId), AuthorID: uint(req.UserId), Body: req.Body}
+
+	if err := db.Preload("Author").Create(&new_comment).First(&new_comment).Error; err != nil {
+		return &api.CreateCommentRsp{}, status.Error(1, err.Error())
+	}
+
+	return &api.CreateCommentRsp{
+		Comment: &api.Comment{
+			Id:      int64(new_comment.ID),
+			PostId:  int64(new_comment.PostRefer),
+			Author:  &api.UserInfo{Id: int64(new_comment.Author.ID), Name: new_comment.Author.Name},
+			Body:    new_comment.Body,
+			Likes:   0,
+			IsLiked: false,
+		},
+	}, nil
 }
 
-func EditComment(ctx context.Context, req *api.EditCommentReq) (*api.EditCommentRsp, error) {
+func (s *Service) EditComment(ctx context.Context, req *api.EditCommentReq) (*api.EditCommentRsp, error) {
 	log.Println("User:", req.UserId, "callded EditComment")
-	return &api.EditCommentRsp{}, nil
+
+	var comment *models.Comment
+	if err := db.Where("ID = ?", req.CommentId).Preload("Author").First(&comment).Error; err != nil {
+		return &api.EditCommentRsp{}, status.Error(1, err.Error())
+	}
+
+	if comment.AuthorID != uint(req.UserId) {
+		return &api.EditCommentRsp{}, status.Error(1, "You are not the author!")
+	}
+
+	comment.Body = req.Body
+
+	if err := db.Save(&comment).Error; err != nil {
+		return &api.EditCommentRsp{}, status.Error(1, err.Error())
+	}
+
+	return &api.EditCommentRsp{
+		Comment: &api.Comment{
+			Id:      int64(comment.ID),
+			PostId:  int64(comment.PostRefer),
+			Author:  &api.UserInfo{Id: int64(comment.Author.ID), Name: comment.Author.Name},
+			Body:    comment.Body,
+			Likes:   0,
+			IsLiked: false,
+		},
+	}, nil
 }
 
-func DeleteComment(ctx context.Context, req *api.DeleteCommentReq) (*api.DeleteCommentRsp, error) {
+func (s *Service) DeleteComment(ctx context.Context, req *api.DeleteCommentReq) (*api.DeleteCommentRsp, error) {
 	log.Println("User:", req.UserId, "callded DeleteComment")
+
+	var comment *models.Comment
+	if err := db.Where("ID = ?", req.CommentId).First(&comment).Error; err != nil {
+		return &api.DeleteCommentRsp{}, status.Error(1, err.Error())
+	}
+
+	if comment.AuthorID != uint(req.UserId) {
+		return &api.DeleteCommentRsp{}, status.Error(1, "You are not the author!")
+	}
+
+	if err := db.Delete(&comment).Error; err != nil {
+		return &api.DeleteCommentRsp{}, status.Error(1, err.Error())
+	}
+
 	return &api.DeleteCommentRsp{}, nil
 }
 
-func LikeComment(ctx context.Context, req *api.LikeCommentReq) (*api.LikeCommentRsp, error) {
+func (s *Service) LikeComment(ctx context.Context, req *api.LikeCommentReq) (*api.LikeCommentRsp, error) {
 	log.Println("User:", req.UserId, "callded LikeComment")
 	return &api.LikeCommentRsp{}, nil
 }
 
-func DislikeComment(ctx context.Context, req *api.DislikeCommentReq) (*api.DislikeCommentRsp, error) {
+func (s *Service) DislikeComment(ctx context.Context, req *api.DislikeCommentReq) (*api.DislikeCommentRsp, error) {
 	log.Println("User:", req.UserId, "callded DislikeComment")
 	return &api.DislikeCommentRsp{}, nil
 }
 
-func genMockData() {
-	for i := int64(0); i < 10; i++ {
-		users = append(users, &api.UserInfo{Id: i, Name: "User " + fmt.Sprint(i)})
+func connectDB() {
+	var err error
+	db, err = gorm.Open(postgres.Open("host=localhost dbname=postgres port=5432 sslmode=disable TimeZone=UTC"), &gorm.Config{})
+	if err != nil {
+		panic(err)
 	}
 
-	for i := int64(0); i < 15; i++ {
-		posts = append(posts,
-			&api.Post{Id: int64(i), Post: &api.PostBody{Title: "Post " + fmt.Sprint(i), Body: "Body " + fmt.Sprint(i)}, Author: users[rand.Intn(len(users))]},
-		)
-		for k := 0; k < rnd.Intn(10); k++ {
-			likes[i] = append(likes[i], rnd.Int63n(10))
-		}
-		slices.Sort(likes[i])
-		likes[i] = slices.Compact(likes[i])
+	err = db.AutoMigrate(&models.User{}, &models.Post{}, &models.Comment{})
+	if err != nil {
+		panic(err)
 	}
 }
 
-//go:embed api/api.swagger.json
-var swaggerData []byte
+func fillDBIfEmpty() {
+	if db == nil {
+		panic("DB is not connected")
+	}
 
-//go:embed swagger-ui
-var swaggerFiles embed.FS
+	var count int64
+	db.Model(&models.User{}).Count(&count)
+	if count > 0 {
+		return
+	}
+
+	// Create sample Users
+	users := []models.User{
+		{Name: "Alice Smith"},
+		{Name: "Bob Johnson"},
+		{Name: "Charlie Davis"},
+		{Name: "Alex Rusin"},
+	}
+
+	if err := db.Create(&users).Error; err != nil {
+		log.Fatalf("Failed to insert users: %v", err)
+	}
+
+	// Create sample Posts
+	initOrders := []models.Post{
+		{Title: "Title 1", Body: "Body 1", AuthorID: 1},
+		{Title: "Title 2", Body: "Body 2", AuthorID: 2},
+		{Title: "Title 3", Body: "Body 3", AuthorID: 2, Comments: []models.Comment{{Body: "Comment 1", AuthorID: 1}, {Body: "Comment 2", AuthorID: 3}}},
+		{Title: "Title 4", Body: "Body 4", AuthorID: 3, Comments: []models.Comment{{Body: "Comment 3", AuthorID: 1}}},
+	}
+
+	if err := db.Create(&initOrders).Error; err != nil {
+		log.Fatalf("Failed to insert orders: %v", err)
+	}
+
+	fmt.Println("Данные созданы")
+}
 
 func main() {
-	genMockData()
+	connectDB()
+	fillDBIfEmpty()
+
+	var posts []models.Post
+	db.Preload("Author").Preload("Comments").Find(&posts)
+
+	for _, post := range posts {
+		fmt.Println(post)
+	}
+
+	var comments []models.Comment
+	db.Preload("Author").Find(&comments)
+
+	for _, comment := range comments {
+		fmt.Println(comment)
+	}
 
 	// Start gRPC server
 	lis, err := net.Listen("tcp", ":50051")
