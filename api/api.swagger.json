@@ -1,0 +1,715 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "api/server.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "Service"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/create-comment": {
+      "post": {
+        "operationId": "Service_CreateComment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CCreateCommentRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/go_1CCreateCommentReq"
+            }
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/create-post": {
+      "post": {
+        "operationId": "Service_CreatePost",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CCreatePostRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/go_1CCreatePostReq"
+            }
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/delete-comment": {
+      "delete": {
+        "operationId": "Service_DeleteComment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CDeleteCommentRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "commentId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/delete-post": {
+      "delete": {
+        "operationId": "Service_DeletePost",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CDeletePostRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "postId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/dislike-comment": {
+      "delete": {
+        "operationId": "Service_DislikeComment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CDislikeCommentRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "commentId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/dislike-post": {
+      "delete": {
+        "operationId": "Service_DislikePost",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CDislikePostRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "postId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/edit-comment": {
+      "put": {
+        "operationId": "Service_EditComment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CEditCommentRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/go_1CEditCommentReq"
+            }
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/edit-post": {
+      "put": {
+        "operationId": "Service_EditPost",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CEditPostRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/go_1CEditPostReq"
+            }
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/get-comments": {
+      "get": {
+        "operationId": "Service_GetComments",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CGetCommentsRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/get-posts": {
+      "get": {
+        "operationId": "Service_GetPosts",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CGetPostsRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/like-comment": {
+      "post": {
+        "operationId": "Service_LikeComment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CLikeCommentRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/go_1CLikeCommentReq"
+            }
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    },
+    "/like-post": {
+      "post": {
+        "operationId": "Service_LikePost",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/go_1CLikePostRsp"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/go_1CLikePostReq"
+            }
+          }
+        ],
+        "tags": [
+          "Service"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "go_1CComment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "postId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "author": {
+          "$ref": "#/definitions/go_1CUserInfo"
+        },
+        "body": {
+          "type": "string"
+        },
+        "likes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "isLiked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "go_1CCreateCommentReq": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "postId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "body": {
+          "type": "string"
+        }
+      }
+    },
+    "go_1CCreateCommentRsp": {
+      "type": "object",
+      "properties": {
+        "comment": {
+          "$ref": "#/definitions/go_1CComment"
+        }
+      }
+    },
+    "go_1CCreatePostReq": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "post": {
+          "$ref": "#/definitions/go_1CPostBody"
+        }
+      }
+    },
+    "go_1CCreatePostRsp": {
+      "type": "object",
+      "properties": {
+        "post": {
+          "$ref": "#/definitions/go_1CPost"
+        }
+      }
+    },
+    "go_1CDeleteCommentRsp": {
+      "type": "object"
+    },
+    "go_1CDeletePostRsp": {
+      "type": "object"
+    },
+    "go_1CDislikeCommentRsp": {
+      "type": "object"
+    },
+    "go_1CDislikePostRsp": {
+      "type": "object"
+    },
+    "go_1CEditCommentReq": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "commentId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "body": {
+          "type": "string"
+        }
+      }
+    },
+    "go_1CEditCommentRsp": {
+      "type": "object",
+      "properties": {
+        "comment": {
+          "$ref": "#/definitions/go_1CComment"
+        }
+      }
+    },
+    "go_1CEditPostReq": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "postId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "post": {
+          "$ref": "#/definitions/go_1CPostBody"
+        }
+      }
+    },
+    "go_1CEditPostRsp": {
+      "type": "object",
+      "properties": {
+        "post": {
+          "$ref": "#/definitions/go_1CPost"
+        }
+      }
+    },
+    "go_1CGetCommentsRsp": {
+      "type": "object",
+      "properties": {
+        "comments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/go_1CComment"
+          }
+        }
+      }
+    },
+    "go_1CGetPostsRsp": {
+      "type": "object",
+      "properties": {
+        "posts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/go_1CPost"
+          }
+        }
+      }
+    },
+    "go_1CLikeCommentReq": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "commentId": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "go_1CLikeCommentRsp": {
+      "type": "object"
+    },
+    "go_1CLikePostReq": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "format": "int64"
+        },
+        "postId": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "go_1CLikePostRsp": {
+      "type": "object"
+    },
+    "go_1CPost": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "post": {
+          "$ref": "#/definitions/go_1CPostBody"
+        },
+        "author": {
+          "$ref": "#/definitions/go_1CUserInfo"
+        },
+        "likes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "isLiked": {
+          "type": "boolean"
+        }
+      }
+    },
+    "go_1CPostBody": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      }
+    },
+    "go_1CUserInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    }
+  }
+}
