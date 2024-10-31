@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -36,6 +38,8 @@ var db *gorm.DB
 var rdb *redis.Client
 var rctx context.Context
 
+const cached_posts_limit int64 = 30
+
 type Service struct {
 	api.UnimplementedServiceServer
 }
@@ -45,21 +49,53 @@ func (s *Service) GetPosts(
 ) (*api.GetPostsRsp, error) {
 	log.Println("User:", req.UserId, "callded GetPosts")
 
-	var posts []models.Post
-	if err := db.Preload("Author").Preload("Comments").Offset(int(req.Offset)).Limit(int(req.Limit)).Find(&posts).Error; err != nil {
-		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+	if req.Offset < 0 || req.Limit < 1 {
+		return &api.GetPostsRsp{}, status.Error(codes.Internal, "Invalid offset or limit!")
 	}
 
+	var request_main_page = req.Offset+req.Limit < cached_posts_limit && req.UserId == 0
 	var posts_rsp []*api.Post
+
+	if request_main_page {
+		// may be cached
+		posts, err := rdb.Get(rctx, "cached_posts").Bytes()
+		if err != redis.Nil && err != nil {
+			return &api.GetPostsRsp{}, status.Error(2, err.Error())
+		} else if err != redis.Nil {
+			err = json.Unmarshal(posts, &posts_rsp)
+			if err != nil {
+				return &api.GetPostsRsp{}, status.Error(3, err.Error())
+			}
+
+			fmt.Println("CACHED:", posts_rsp)
+
+			return &api.GetPostsRsp{Posts: posts_rsp[req.Offset:min(req.Offset+req.Limit, int64(len(posts_rsp)))]}, nil
+		} else {
+			// not cached
+			// falthrough
+		}
+	}
+
+	var posts []models.Post
+	if request_main_page {
+		if err := db.Preload("Author").Offset(0).Limit(int(cached_posts_limit)).Find(&posts).Error; err != nil {
+			return &api.GetPostsRsp{}, status.Error(4, err.Error())
+		}
+	} else {
+		if err := db.Preload("Author").Offset(int(req.Offset)).Limit(int(req.Limit)).Find(&posts).Error; err != nil {
+			return &api.GetPostsRsp{}, status.Error(4, err.Error())
+		}
+	}
+
 	for _, post := range posts {
 		likes, err := rdb.SCard(rctx, "post_"+string(post.ID)).Result()
 		if err != nil {
-			return &api.GetPostsRsp{}, status.Error(2, err.Error())
+			return &api.GetPostsRsp{}, status.Error(5, err.Error())
 		}
 
 		is_liked, err := rdb.SIsMember(rctx, "post_"+string(post.ID), req.UserId).Result()
 		if err != nil {
-			return &api.GetPostsRsp{}, status.Error(3, err.Error())
+			return &api.GetPostsRsp{}, status.Error(6, err.Error())
 		}
 
 		posts_rsp = append(posts_rsp,
@@ -73,7 +109,21 @@ func (s *Service) GetPosts(
 			})
 	}
 
-	return &api.GetPostsRsp{Posts: posts_rsp}, nil
+	if !request_main_page {
+		return &api.GetPostsRsp{Posts: posts_rsp}, nil
+	}
+
+	// save cache to redis
+	posts_to_cache, err := json.Marshal(posts_rsp)
+	if err != nil {
+		return &api.GetPostsRsp{}, status.Error(7, err.Error())
+	}
+	err = rdb.Set(rctx, "cached_posts", posts_to_cache, 5*time.Second).Err()
+	if err != nil {
+		return &api.GetPostsRsp{}, status.Error(8, err.Error())
+	}
+
+	return &api.GetPostsRsp{Posts: posts_rsp[req.Offset:min(req.Offset+req.Limit, int64(len(posts_rsp)))]}, nil
 }
 
 func (s *Service) CreatePost(
