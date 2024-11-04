@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
+	"sync"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -87,27 +89,50 @@ func (s *Service) GetPosts(
 		}
 	}
 
+	var wg sync.WaitGroup
+	mutex := &sync.Mutex{}
+	errs := make(chan error, len(posts))
+
 	for _, post := range posts {
-		likes, err := rdb.SCard(rctx, "post_"+string(post.ID)).Result()
-		if err != nil {
-			return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
-		}
+		wg.Add(1)
+		go func(post models.Post) {
+			defer wg.Done()
+			likes, err := rdb.SCard(rctx, "post_"+string(post.ID)).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
 
-		is_liked, err := rdb.SIsMember(rctx, "post_"+string(post.ID), req.UserId).Result()
-		if err != nil {
-			return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
-		}
+			is_liked, err := rdb.SIsMember(rctx, "post_"+string(post.ID), req.UserId).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
 
-		posts_rsp = append(posts_rsp,
-			&api.Post{
-				Id:       int64(post.ID),
-				Post:     &api.PostBody{Title: post.Title, Body: post.Body},
-				Author:   &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
-				Likes:    likes,
-				IsLiked:  is_liked,
-				Comments: int64(len(post.Comments)),
-			})
+			mutex.Lock()
+			defer mutex.Unlock()
+			posts_rsp = append(posts_rsp,
+				&api.Post{
+					Id:       int64(post.ID),
+					Post:     &api.PostBody{Title: post.Title, Body: post.Body},
+					Author:   &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
+					Likes:    likes,
+					IsLiked:  is_liked,
+					Comments: int64(len(post.Comments)),
+				})
+		}(post)
 	}
+
+	wg.Wait()
+	close(errs)
+
+	if err := <-errs; err != nil {
+		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	sort.Slice(posts_rsp, func(i, j int) bool {
+		return posts_rsp[i].Id < posts_rsp[j].Id
+	})
 
 	if !request_main_page {
 		return &api.GetPostsRsp{Posts: posts_rsp}, nil
