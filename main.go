@@ -287,27 +287,51 @@ func (s *Service) GetComments(ctx context.Context, req *api.GetCommentsReq) (*ap
 	}
 
 	var comments_rsp []*api.Comment
+
+	var wg sync.WaitGroup
+	mutex := &sync.Mutex{}
+	errs := make(chan error, len(comments))
+
 	for _, comment := range comments {
-		likes, err := rdb.SCard(rctx, "comment_"+string(comment.ID)).Result()
-		if err != nil {
-			return &api.GetCommentsRsp{}, status.Error(codes.Internal, err.Error())
-		}
+		wg.Add(1)
+		go func(comment models.Comment) {
+			defer wg.Done()
+			likes, err := rdb.SCard(rctx, "comment_"+string(comment.ID)).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
 
-		is_liked, err := rdb.SIsMember(rctx, "comment_"+string(comment.ID), req.UserId).Result()
-		if err != nil {
-			return &api.GetCommentsRsp{}, status.Error(codes.Internal, err.Error())
-		}
+			is_liked, err := rdb.SIsMember(rctx, "comment_"+string(comment.ID), req.UserId).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
 
-		comments_rsp = append(comments_rsp,
-			&api.Comment{
-				Id:      int64(comment.ID),
-				PostId:  int64(comment.PostRefer),
-				Author:  &api.UserInfo{Id: int64(comment.Author.ID), Name: comment.Author.Name},
-				Body:    comment.Body,
-				Likes:   likes,
-				IsLiked: is_liked,
-			})
+			mutex.Lock()
+			defer mutex.Unlock()
+			comments_rsp = append(comments_rsp,
+				&api.Comment{
+					Id:      int64(comment.ID),
+					PostId:  int64(comment.PostRefer),
+					Author:  &api.UserInfo{Id: int64(comment.Author.ID), Name: comment.Author.Name},
+					Body:    comment.Body,
+					Likes:   likes,
+					IsLiked: is_liked,
+				})
+		}(comment)
 	}
+
+	wg.Wait()
+	close(errs)
+
+	if err := <-errs; err != nil {
+		return &api.GetCommentsRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	sort.Slice(comments_rsp, func(i, j int) bool {
+		return comments_rsp[i].Id < comments_rsp[j].Id
+	})
 
 	return &api.GetCommentsRsp{Comments: comments_rsp}, nil
 }
