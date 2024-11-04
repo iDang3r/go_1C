@@ -17,6 +17,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
@@ -40,19 +41,20 @@ func (s *Service) GetPosts(
 	log.Println("User:", req.UserId, "callded GetPosts")
 
 	var posts []models.Post
-	if err := db.Preload("Author").Offset(int(req.Offset)).Limit(int(req.Limit)).Find(&posts).Error; err != nil {
-		return &api.GetPostsRsp{}, status.Error(1, err.Error())
+	if err := db.Preload("Author").Preload("Comments").Offset(int(req.Offset)).Limit(int(req.Limit)).Find(&posts).Error; err != nil {
+		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	var posts_rsp []*api.Post
 	for _, post := range posts {
 		posts_rsp = append(posts_rsp,
 			&api.Post{
-				Id:      int64(post.ID),
-				Post:    &api.PostBody{Title: post.Title, Body: post.Body},
-				Author:  &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
-				Likes:   0,
-				IsLiked: false,
+				Id:       int64(post.ID),
+				Post:     &api.PostBody{Title: post.Title, Body: post.Body},
+				Author:   &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
+				Likes:    0,
+				IsLiked:  false,
+				Comments: int64(len(post.Comments)),
 			})
 	}
 
@@ -67,16 +69,17 @@ func (s *Service) CreatePost(
 	new_post := &models.Post{Title: req.Post.Title, Body: req.Post.Body, AuthorID: uint(req.UserId)}
 
 	if err := db.Preload("Author").Create(&new_post).First(&new_post).Error; err != nil {
-		return &api.CreatePostRsp{}, status.Error(1, err.Error())
+		return &api.CreatePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	return &api.CreatePostRsp{
 		Post: &api.Post{
-			Id:      int64(new_post.ID),
-			Post:    &api.PostBody{Title: new_post.Title, Body: new_post.Body},
-			Author:  &api.UserInfo{Id: int64(new_post.Author.ID), Name: new_post.Author.Name},
-			Likes:   0,
-			IsLiked: false,
+			Id:       int64(new_post.ID),
+			Post:     &api.PostBody{Title: new_post.Title, Body: new_post.Body},
+			Author:   &api.UserInfo{Id: int64(new_post.Author.ID), Name: new_post.Author.Name},
+			Likes:    0,
+			IsLiked:  false,
+			Comments: 0,
 		}}, nil
 }
 
@@ -86,28 +89,29 @@ func (s *Service) EditPost(
 	log.Println("User:", req.UserId, "callded EditPost")
 
 	var post *models.Post
-	if err := db.Where("ID = ?", req.PostId).Preload("Author").First(&post).Error; err != nil {
-		return &api.EditPostRsp{}, status.Error(1, err.Error())
+	if err := db.Where("ID = ?", req.PostId).Preload("Author").Preload("Comments").First(&post).Error; err != nil {
+		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	if post.AuthorID != uint(req.UserId) {
-		return &api.EditPostRsp{}, status.Error(1, "You are not the author!")
+		return &api.EditPostRsp{}, status.Error(codes.Unauthenticated, "You are not the author!")
 	}
 
 	post.Title = req.Post.Title
 	post.Body = req.Post.Body
 
 	if err := db.Save(&post).Error; err != nil {
-		return &api.EditPostRsp{}, status.Error(1, err.Error())
+		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	return &api.EditPostRsp{
 		Post: &api.Post{
-			Id:      int64(post.ID),
-			Post:    &api.PostBody{Title: post.Title, Body: post.Body},
-			Author:  &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
-			Likes:   0,
-			IsLiked: false,
+			Id:       int64(post.ID),
+			Post:     &api.PostBody{Title: post.Title, Body: post.Body},
+			Author:   &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
+			Likes:    0,
+			IsLiked:  false,
+			Comments: int64(len(post.Comments)),
 		},
 	}, nil
 }
@@ -117,15 +121,15 @@ func (s *Service) DeletePost(ctx context.Context, req *api.DeletePostReq) (*api.
 
 	var post *models.Post
 	if err := db.Where("ID = ?", req.PostId).First(&post).Error; err != nil {
-		return &api.DeletePostRsp{}, status.Error(1, err.Error())
+		return &api.DeletePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	if post.AuthorID != uint(req.UserId) {
-		return &api.DeletePostRsp{}, status.Error(1, "You are not the author!")
+		return &api.DeletePostRsp{}, status.Error(codes.Unauthenticated, "You are not the author!")
 	}
 
 	if err := db.Delete(&post).Error; err != nil {
-		return &api.DeletePostRsp{}, status.Error(1, err.Error())
+		return &api.DeletePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	return &api.DeletePostRsp{}, nil
@@ -148,7 +152,7 @@ func (s *Service) GetComments(ctx context.Context, req *api.GetCommentsReq) (*ap
 
 	var comments []models.Comment
 	if err := db.Where("post_refer = ?", req.PostId).Offset(int(req.Offset)).Limit(int(req.Limit)).Preload("Author").Find(&comments).Error; err != nil {
-		return &api.GetCommentsRsp{}, status.Error(1, err.Error())
+		return &api.GetCommentsRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	var comments_rsp []*api.Comment
@@ -193,17 +197,17 @@ func (s *Service) EditComment(ctx context.Context, req *api.EditCommentReq) (*ap
 
 	var comment *models.Comment
 	if err := db.Where("ID = ?", req.CommentId).Preload("Author").First(&comment).Error; err != nil {
-		return &api.EditCommentRsp{}, status.Error(1, err.Error())
+		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	if comment.AuthorID != uint(req.UserId) {
-		return &api.EditCommentRsp{}, status.Error(1, "You are not the author!")
+		return &api.EditCommentRsp{}, status.Error(codes.Unauthenticated, "You are not the author!")
 	}
 
 	comment.Body = req.Body
 
 	if err := db.Save(&comment).Error; err != nil {
-		return &api.EditCommentRsp{}, status.Error(1, err.Error())
+		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	return &api.EditCommentRsp{
@@ -223,15 +227,15 @@ func (s *Service) DeleteComment(ctx context.Context, req *api.DeleteCommentReq) 
 
 	var comment *models.Comment
 	if err := db.Where("ID = ?", req.CommentId).First(&comment).Error; err != nil {
-		return &api.DeleteCommentRsp{}, status.Error(1, err.Error())
+		return &api.DeleteCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	if comment.AuthorID != uint(req.UserId) {
-		return &api.DeleteCommentRsp{}, status.Error(1, "You are not the author!")
+		return &api.DeleteCommentRsp{}, status.Error(codes.Unauthenticated, "You are not the author!")
 	}
 
 	if err := db.Delete(&comment).Error; err != nil {
-		return &api.DeleteCommentRsp{}, status.Error(1, err.Error())
+		return &api.DeleteCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	return &api.DeleteCommentRsp{}, nil

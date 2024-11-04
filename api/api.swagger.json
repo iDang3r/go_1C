@@ -664,6 +664,10 @@
         },
         "isLiked": {
           "type": "boolean"
+        },
+        "comments": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
