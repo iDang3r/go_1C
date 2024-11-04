@@ -28,6 +28,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
 //go:embed api/api.swagger.json
@@ -44,6 +50,8 @@ const cached_posts_limit int64 = 30
 
 type Service struct {
 	api.UnimplementedServiceServer
+	Logger       *zap.Logger
+	LikesLatency *prometheus.HistogramVec
 }
 
 func (s *Service) GetPosts(
@@ -60,7 +68,10 @@ func (s *Service) GetPosts(
 
 	if request_main_page {
 		// may be cached
+		s.Logger.Info("Redis start to check cached posts")
 		posts, err := rdb.Get(rctx, "cached_posts").Bytes()
+		s.Logger.Info("Redis ended to check cached posts")
+
 		if err != redis.Nil && err != nil {
 			return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
 		} else if err != redis.Nil {
@@ -95,15 +106,23 @@ func (s *Service) GetPosts(
 
 	for _, post := range posts {
 		wg.Add(1)
-		go func(post models.Post) {
+		go func(post models.Post, logger *zap.Logger) {
 			defer wg.Done()
+			logger.Info("Redis: start get total likes;", zap.Uint("post_id", post.ID))
+			start := time.Now()
 			likes, err := rdb.SCard(rctx, "post_"+string(post.ID)).Result()
+			s.LikesLatency.WithLabelValues("likes_latency").Observe(float64(time.Since(start).Milliseconds()))
+			logger.Info("Redis: ended get total likes;", zap.Uint("post_id", post.ID))
+
 			if err != nil {
 				errs <- err
 				return
 			}
 
+			logger.Info("Redis: start get is_liked;", zap.Uint("post_id", post.ID), zap.Int64("user_id", req.UserId))
 			is_liked, err := rdb.SIsMember(rctx, "post_"+string(post.ID), req.UserId).Result()
+			logger.Info("Redis: ended get is_liked;", zap.Uint("post_id", post.ID), zap.Int64("user_id", req.UserId))
+
 			if err != nil {
 				errs <- err
 				return
@@ -120,7 +139,7 @@ func (s *Service) GetPosts(
 					IsLiked:  is_liked,
 					Comments: int64(len(post.Comments)),
 				})
-		}(post)
+		}(post, s.Logger)
 	}
 
 	wg.Wait()
@@ -143,7 +162,9 @@ func (s *Service) GetPosts(
 	if err != nil {
 		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
 	}
+	s.Logger.Info("Redis start to save cached posts")
 	err = rdb.Set(rctx, "cached_posts", posts_to_cache, 5*time.Second).Err()
+	s.Logger.Info("Redis ended to save cached posts")
 	if err != nil {
 		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -194,12 +215,18 @@ func (s *Service) EditPost(
 		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	s.Logger.Info("Redis: start get total likes;", zap.Uint("post_id", post.ID))
+	start := time.Now()
 	likes, err := rdb.SCard(rctx, "post_"+string(post.ID)).Result()
+	s.LikesLatency.WithLabelValues("likes_latency").Observe(float64(time.Since(start).Milliseconds()))
+	s.Logger.Info("Redis: ended get total likes;", zap.Uint("post_id", post.ID))
 	if err != nil {
 		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	s.Logger.Info("Redis: start get is_liked;", zap.Uint("post_id", post.ID))
 	is_liked, err := rdb.SIsMember(rctx, "post_"+string(post.ID), req.UserId).Result()
+	s.Logger.Info("Redis: ended get is_liked;", zap.Uint("post_id", post.ID))
 	if err != nil {
 		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -232,7 +259,9 @@ func (s *Service) DeletePost(ctx context.Context, req *api.DeletePostReq) (*api.
 		return &api.DeletePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	s.Logger.Info("Redis: start delete all likes;", zap.Uint("post_id", post.ID))
 	_, err := rdb.Del(rctx, "post_"+string(post.ID)).Result()
+	s.Logger.Info("Redis: ended delete all likes;", zap.Uint("post_id", post.ID))
 	if err != nil {
 		return &api.DeletePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -247,7 +276,9 @@ func (s *Service) LikePost(ctx context.Context, req *api.LikePostReq) (*api.Like
 		return &api.LikePostRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
 	}
 
+	s.Logger.Info("Redis: start add like;", zap.Int64("post_id", req.PostId), zap.Int64("user_id", req.UserId))
 	liked, err := rdb.SAdd(rctx, "post_"+string(req.PostId), req.UserId).Result()
+	s.Logger.Info("Redis: ended add like;", zap.Int64("post_id", req.PostId), zap.Int64("user_id", req.UserId))
 	if err != nil {
 		return &api.LikePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -266,7 +297,9 @@ func (s *Service) DislikePost(ctx context.Context, req *api.DislikePostReq) (*ap
 		return &api.DislikePostRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
 	}
 
+	s.Logger.Info("Redis: start delete like;", zap.Int64("post_id", req.PostId), zap.Int64("user_id", req.UserId))
 	disliked, err := rdb.SRem(rctx, "post_"+string(req.PostId), req.UserId).Result()
+	s.Logger.Info("Redis: ended delete like;", zap.Int64("post_id", req.PostId), zap.Int64("user_id", req.UserId))
 	if err != nil {
 		return &api.DislikePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -294,15 +327,19 @@ func (s *Service) GetComments(ctx context.Context, req *api.GetCommentsReq) (*ap
 
 	for _, comment := range comments {
 		wg.Add(1)
-		go func(comment models.Comment) {
+		go func(comment models.Comment, logger *zap.Logger) {
 			defer wg.Done()
+			logger.Info("Redis: start get likes;", zap.Uint("comment_id", comment.ID))
 			likes, err := rdb.SCard(rctx, "comment_"+string(comment.ID)).Result()
+			logger.Info("Redis: ended get likes;", zap.Uint("comment_id", comment.ID))
 			if err != nil {
 				errs <- err
 				return
 			}
 
+			logger.Info("Redis: start get is_liked;", zap.Uint("comment_id", comment.ID), zap.Int64("user_id", req.UserId))
 			is_liked, err := rdb.SIsMember(rctx, "comment_"+string(comment.ID), req.UserId).Result()
+			logger.Info("Redis: ended get is_liked;", zap.Uint("comment_id", comment.ID), zap.Int64("user_id", req.UserId))
 			if err != nil {
 				errs <- err
 				return
@@ -319,7 +356,7 @@ func (s *Service) GetComments(ctx context.Context, req *api.GetCommentsReq) (*ap
 					Likes:   likes,
 					IsLiked: is_liked,
 				})
-		}(comment)
+		}(comment, s.Logger)
 	}
 
 	wg.Wait()
@@ -375,12 +412,16 @@ func (s *Service) EditComment(ctx context.Context, req *api.EditCommentReq) (*ap
 		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	s.Logger.Info("Redis: start get total likes;", zap.Uint("comment_id", comment.ID))
 	likes, err := rdb.SCard(rctx, "comment_"+string(comment.ID)).Result()
+	s.Logger.Info("Redis: ended get total likes;", zap.Uint("comment_id", comment.ID))
 	if err != nil {
 		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	s.Logger.Info("Redis: start get is_liked;", zap.Uint("comment_id", comment.ID), zap.Int64("user_id", req.UserId))
 	is_liked, err := rdb.SIsMember(rctx, "comment_"+string(comment.ID), req.UserId).Result()
+	s.Logger.Info("Redis: ended get is_liked;", zap.Uint("comment_id", comment.ID), zap.Int64("user_id", req.UserId))
 	if err != nil {
 		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -413,7 +454,9 @@ func (s *Service) DeleteComment(ctx context.Context, req *api.DeleteCommentReq) 
 		return &api.DeleteCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	s.Logger.Info("Redis: start delete all likes;", zap.Uint("comment_id", comment.ID))
 	_, err := rdb.Del(rctx, "comment_"+string(comment.ID)).Result()
+	s.Logger.Info("Redis: ended delete all likes;", zap.Uint("comment_id", comment.ID))
 	if err != nil {
 		return &api.DeleteCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -428,7 +471,9 @@ func (s *Service) LikeComment(ctx context.Context, req *api.LikeCommentReq) (*ap
 		return &api.LikeCommentRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
 	}
 
+	s.Logger.Info("Redis: start add like;", zap.Int64("comment_id", req.CommentId), zap.Int64("user_id", req.UserId))
 	liked, err := rdb.SAdd(rctx, "comment_"+string(req.CommentId), req.UserId).Result()
+	s.Logger.Info("Redis: ended add like;", zap.Int64("comment_id", req.CommentId), zap.Int64("user_id", req.UserId))
 	if err != nil {
 		return &api.LikeCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -447,7 +492,9 @@ func (s *Service) DislikeComment(ctx context.Context, req *api.DislikeCommentReq
 		return &api.DislikeCommentRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
 	}
 
+	s.Logger.Info("Redis: start delete like;", zap.Int64("comment_id", req.CommentId), zap.Int64("user_id", req.UserId))
 	disliked, err := rdb.SRem(rctx, "comment_"+string(req.CommentId), req.UserId).Result()
+	s.Logger.Info("Redis: ended delete like;", zap.Int64("comment_id", req.CommentId), zap.Int64("user_id", req.UserId))
 	if err != nil {
 		return &api.DislikeCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
@@ -516,23 +563,61 @@ func fillDBIfEmpty() {
 }
 
 func main() {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
+
 	connectDB()
 	connectRedis()
 	fillDBIfEmpty()
 
+	// just to test DB
 	var posts []models.Post
 	db.Preload("Author").Preload("Comments").Find(&posts)
-
 	for _, post := range posts {
 		fmt.Println(post)
 	}
 
 	var comments []models.Comment
 	db.Preload("Author").Find(&comments)
-
 	for _, comment := range comments {
 		fmt.Println(comment)
 	}
+
+	// Для анализа latency запросов:
+	// 1. Counter плохо подходит. Можно завести два счётчика - сумму latency и
+	//    количество запросов, чтобы считать среднее latency, но это малоинформативно.
+	// 2. Gauge не подходит. Можно разве что выводить последнее значение latency.
+	// 3. Histogram подходит отлично, наглядно видно распределение latency. При этом
+	//    достаточно просто вычислется - инкрементом соответствующего бакета.
+	// 4. Summary подходит, но по идее будет сопровождаться проблемами производительности,
+	//    так как необходимо хранить весь массив данных и сортировать.
+	//
+	// Также умные люди замечают, что расчёт квантилей происходит на стороне клинета,
+	// а уже готовые квантили с разными лейблами мы не сможем агрегировать :(
+	// https://chronosphere.io/learn/an-introduction-to-the-four-primary-types-of-prometheus-metrics/
+	//
+	// Поэтому выбираем Histogram.
+	likes_latency := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "likes_latency",
+			Buckets: []float64{0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200},
+		},
+		[]string{"likes_latency"},
+	)
+	prometheus.MustRegister(likes_latency)
+
+	go func() {
+		server := &http.Server{
+			Addr:    ":9090",
+			Handler: promhttp.Handler(),
+		}
+
+		log.Println("Serving metrics on http://0.0.0.0:9090")
+		log.Fatalln(server.ListenAndServe())
+	}()
 
 	// Start gRPC server
 	lis, err := net.Listen("tcp", ":50051")
@@ -540,9 +625,17 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := &Service{}
+	s := &Service{
+		Logger:       logger,
+		LikesLatency: likes_latency,
+	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			grpc_zap.UnaryServerInterceptor(logger),
+			grpc_prometheus.UnaryServerInterceptor,
+		),
+	)
 	api.RegisterServiceServer(grpcServer, s)
 	reflection.Register(grpcServer)
 
