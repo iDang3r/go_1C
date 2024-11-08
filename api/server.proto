@@ -91,6 +91,7 @@ message Post {
     UserInfo author = 3;
     int64 likes = 4;
     bool is_liked = 5;
+    int64 comments = 6;
 }
 
 message Comment {
@@ -157,6 +158,7 @@ message DislikePostRsp {
 
 message GetCommentsReq {
     int64 user_id = 1;
+    int64 post_id = 4;
     int64 offset = 2;
     int64 limit = 3;
 }

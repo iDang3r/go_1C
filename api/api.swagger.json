@@ -322,6 +322,13 @@
             "format": "int64"
           },
           {
+            "name": "postId",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
             "name": "offset",
             "in": "query",
             "required": false,
@@ -657,6 +664,10 @@
         },
         "isLiked": {
           "type": "boolean"
+        },
+        "comments": {
+          "type": "string",
+          "format": "int64"
         }
       }
     },
