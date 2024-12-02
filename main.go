@@ -3,14 +3,21 @@ package main
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"sort"
+	"sync"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	"github.com/redis/go-redis/v9"
 
 	api "go_1C/api"
 	"go_1C/models"
@@ -30,6 +37,10 @@ var swaggerData []byte
 var swaggerFiles embed.FS
 
 var db *gorm.DB
+var rdb *redis.Client
+var rctx context.Context
+
+const cached_posts_limit int64 = 30
 
 type Service struct {
 	api.UnimplementedServiceServer
@@ -40,25 +51,104 @@ func (s *Service) GetPosts(
 ) (*api.GetPostsRsp, error) {
 	log.Println("User:", req.UserId, "callded GetPosts")
 
+	if req.Offset < 0 || req.Limit < 1 {
+		return &api.GetPostsRsp{}, status.Error(codes.Internal, "Invalid offset or limit!")
+	}
+
+	var request_main_page = req.Offset+req.Limit < cached_posts_limit && req.UserId == 0
+	var posts_rsp []*api.Post
+
+	if request_main_page {
+		// may be cached
+		posts, err := rdb.Get(rctx, "cached_posts").Bytes()
+		if err != redis.Nil && err != nil {
+			return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+		} else if err != redis.Nil {
+			err = json.Unmarshal(posts, &posts_rsp)
+			if err != nil {
+				return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+			}
+
+			fmt.Println("CACHED:", posts_rsp)
+
+			return &api.GetPostsRsp{Posts: posts_rsp[req.Offset:min(req.Offset+req.Limit, int64(len(posts_rsp)))]}, nil
+		} else {
+			// not cached
+			// falthrough
+		}
+	}
+
 	var posts []models.Post
-	if err := db.Preload("Author").Preload("Comments").Offset(int(req.Offset)).Limit(int(req.Limit)).Find(&posts).Error; err != nil {
+	if request_main_page {
+		if err := db.Preload("Author").Preload("Comments").Offset(0).Limit(int(cached_posts_limit)).Find(&posts).Error; err != nil {
+			return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+		}
+	} else {
+		if err := db.Preload("Author").Preload("Comments").Offset(int(req.Offset)).Limit(int(req.Limit)).Find(&posts).Error; err != nil {
+			return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	var wg sync.WaitGroup
+	mutex := &sync.Mutex{}
+	errs := make(chan error, len(posts))
+
+	for _, post := range posts {
+		wg.Add(1)
+		go func(post models.Post) {
+			defer wg.Done()
+			likes, err := rdb.SCard(rctx, "post_"+string(post.ID)).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			is_liked, err := rdb.SIsMember(rctx, "post_"+string(post.ID), req.UserId).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			mutex.Lock()
+			defer mutex.Unlock()
+			posts_rsp = append(posts_rsp,
+				&api.Post{
+					Id:       int64(post.ID),
+					Post:     &api.PostBody{Title: post.Title, Body: post.Body},
+					Author:   &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
+					Likes:    likes,
+					IsLiked:  is_liked,
+					Comments: int64(len(post.Comments)),
+				})
+		}(post)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	if err := <-errs; err != nil {
 		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
-	var posts_rsp []*api.Post
-	for _, post := range posts {
-		posts_rsp = append(posts_rsp,
-			&api.Post{
-				Id:       int64(post.ID),
-				Post:     &api.PostBody{Title: post.Title, Body: post.Body},
-				Author:   &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
-				Likes:    0,
-				IsLiked:  false,
-				Comments: int64(len(post.Comments)),
-			})
+	sort.Slice(posts_rsp, func(i, j int) bool {
+		return posts_rsp[i].Id < posts_rsp[j].Id
+	})
+
+	if !request_main_page {
+		return &api.GetPostsRsp{Posts: posts_rsp}, nil
 	}
 
-	return &api.GetPostsRsp{Posts: posts_rsp}, nil
+	// save cache to redis
+	posts_to_cache, err := json.Marshal(posts_rsp)
+	if err != nil {
+		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+	}
+	err = rdb.Set(rctx, "cached_posts", posts_to_cache, 5*time.Second).Err()
+	if err != nil {
+		return &api.GetPostsRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	return &api.GetPostsRsp{Posts: posts_rsp[req.Offset:min(req.Offset+req.Limit, int64(len(posts_rsp)))]}, nil
 }
 
 func (s *Service) CreatePost(
@@ -104,13 +194,23 @@ func (s *Service) EditPost(
 		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	likes, err := rdb.SCard(rctx, "post_"+string(post.ID)).Result()
+	if err != nil {
+		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	is_liked, err := rdb.SIsMember(rctx, "post_"+string(post.ID), req.UserId).Result()
+	if err != nil {
+		return &api.EditPostRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
 	return &api.EditPostRsp{
 		Post: &api.Post{
 			Id:       int64(post.ID),
 			Post:     &api.PostBody{Title: post.Title, Body: post.Body},
 			Author:   &api.UserInfo{Id: int64(post.Author.ID), Name: post.Author.Name},
-			Likes:    0,
-			IsLiked:  false,
+			Likes:    likes,
+			IsLiked:  is_liked,
 			Comments: int64(len(post.Comments)),
 		},
 	}, nil
@@ -132,17 +232,48 @@ func (s *Service) DeletePost(ctx context.Context, req *api.DeletePostReq) (*api.
 		return &api.DeletePostRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	_, err := rdb.Del(rctx, "post_"+string(post.ID)).Result()
+	if err != nil {
+		return &api.DeletePostRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
 	return &api.DeletePostRsp{}, nil
 }
 
 func (s *Service) LikePost(ctx context.Context, req *api.LikePostReq) (*api.LikePostRsp, error) {
 	log.Println("User:", req.UserId, "callded LikePost")
 
+	if req.UserId == 0 {
+		return &api.LikePostRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
+	}
+
+	liked, err := rdb.SAdd(rctx, "post_"+string(req.PostId), req.UserId).Result()
+	if err != nil {
+		return &api.LikePostRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	if liked == 0 {
+		return &api.LikePostRsp{}, status.Error(codes.AlreadyExists, "You already liked this post!")
+	}
+
 	return &api.LikePostRsp{}, nil
 }
 
 func (s *Service) DislikePost(ctx context.Context, req *api.DislikePostReq) (*api.DislikePostRsp, error) {
 	log.Println("User:", req.UserId, "callded DislikePost")
+
+	if req.UserId == 0 {
+		return &api.DislikePostRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
+	}
+
+	disliked, err := rdb.SRem(rctx, "post_"+string(req.PostId), req.UserId).Result()
+	if err != nil {
+		return &api.DislikePostRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	if disliked == 0 {
+		return &api.DislikePostRsp{}, status.Error(codes.AlreadyExists, "You already disliked this post!")
+	}
 
 	return &api.DislikePostRsp{}, nil
 }
@@ -156,17 +287,51 @@ func (s *Service) GetComments(ctx context.Context, req *api.GetCommentsReq) (*ap
 	}
 
 	var comments_rsp []*api.Comment
+
+	var wg sync.WaitGroup
+	mutex := &sync.Mutex{}
+	errs := make(chan error, len(comments))
+
 	for _, comment := range comments {
-		comments_rsp = append(comments_rsp,
-			&api.Comment{
-				Id:      int64(comment.ID),
-				PostId:  int64(comment.PostRefer),
-				Author:  &api.UserInfo{Id: int64(comment.Author.ID), Name: comment.Author.Name},
-				Body:    comment.Body,
-				Likes:   0,
-				IsLiked: false,
-			})
+		wg.Add(1)
+		go func(comment models.Comment) {
+			defer wg.Done()
+			likes, err := rdb.SCard(rctx, "comment_"+string(comment.ID)).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			is_liked, err := rdb.SIsMember(rctx, "comment_"+string(comment.ID), req.UserId).Result()
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			mutex.Lock()
+			defer mutex.Unlock()
+			comments_rsp = append(comments_rsp,
+				&api.Comment{
+					Id:      int64(comment.ID),
+					PostId:  int64(comment.PostRefer),
+					Author:  &api.UserInfo{Id: int64(comment.Author.ID), Name: comment.Author.Name},
+					Body:    comment.Body,
+					Likes:   likes,
+					IsLiked: is_liked,
+				})
+		}(comment)
 	}
+
+	wg.Wait()
+	close(errs)
+
+	if err := <-errs; err != nil {
+		return &api.GetCommentsRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	sort.Slice(comments_rsp, func(i, j int) bool {
+		return comments_rsp[i].Id < comments_rsp[j].Id
+	})
 
 	return &api.GetCommentsRsp{Comments: comments_rsp}, nil
 }
@@ -177,7 +342,7 @@ func (s *Service) CreateComment(ctx context.Context, req *api.CreateCommentReq) 
 	new_comment := &models.Comment{PostRefer: uint(req.PostId), AuthorID: uint(req.UserId), Body: req.Body}
 
 	if err := db.Preload("Author").Create(&new_comment).First(&new_comment).Error; err != nil {
-		return &api.CreateCommentRsp{}, status.Error(1, err.Error())
+		return &api.CreateCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
 	return &api.CreateCommentRsp{
@@ -210,14 +375,24 @@ func (s *Service) EditComment(ctx context.Context, req *api.EditCommentReq) (*ap
 		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	likes, err := rdb.SCard(rctx, "comment_"+string(comment.ID)).Result()
+	if err != nil {
+		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	is_liked, err := rdb.SIsMember(rctx, "comment_"+string(comment.ID), req.UserId).Result()
+	if err != nil {
+		return &api.EditCommentRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
 	return &api.EditCommentRsp{
 		Comment: &api.Comment{
 			Id:      int64(comment.ID),
 			PostId:  int64(comment.PostRefer),
 			Author:  &api.UserInfo{Id: int64(comment.Author.ID), Name: comment.Author.Name},
 			Body:    comment.Body,
-			Likes:   0,
-			IsLiked: false,
+			Likes:   likes,
+			IsLiked: is_liked,
 		},
 	}, nil
 }
@@ -238,16 +413,49 @@ func (s *Service) DeleteComment(ctx context.Context, req *api.DeleteCommentReq) 
 		return &api.DeleteCommentRsp{}, status.Error(codes.Internal, err.Error())
 	}
 
+	_, err := rdb.Del(rctx, "comment_"+string(comment.ID)).Result()
+	if err != nil {
+		return &api.DeleteCommentRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
 	return &api.DeleteCommentRsp{}, nil
 }
 
 func (s *Service) LikeComment(ctx context.Context, req *api.LikeCommentReq) (*api.LikeCommentRsp, error) {
 	log.Println("User:", req.UserId, "callded LikeComment")
+
+	if req.UserId == 0 {
+		return &api.LikeCommentRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
+	}
+
+	liked, err := rdb.SAdd(rctx, "comment_"+string(req.CommentId), req.UserId).Result()
+	if err != nil {
+		return &api.LikeCommentRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	if liked == 0 {
+		return &api.LikeCommentRsp{}, status.Error(codes.AlreadyExists, "You already liked this comment!")
+	}
+
 	return &api.LikeCommentRsp{}, nil
 }
 
 func (s *Service) DislikeComment(ctx context.Context, req *api.DislikeCommentReq) (*api.DislikeCommentRsp, error) {
 	log.Println("User:", req.UserId, "callded DislikeComment")
+
+	if req.UserId == 0 {
+		return &api.DislikeCommentRsp{}, status.Error(codes.Unauthenticated, "You are not logged in!")
+	}
+
+	disliked, err := rdb.SRem(rctx, "comment_"+string(req.CommentId), req.UserId).Result()
+	if err != nil {
+		return &api.DislikeCommentRsp{}, status.Error(codes.Internal, err.Error())
+	}
+
+	if disliked == 0 {
+		return &api.DislikeCommentRsp{}, status.Error(codes.AlreadyExists, "You already disliked this comment!")
+	}
+
 	return &api.DislikeCommentRsp{}, nil
 }
 
@@ -264,6 +472,11 @@ func connectDB() {
 	}
 }
 
+func connectRedis() {
+	rctx = context.Background()
+	rdb = redis.NewClient(&redis.Options{Addr: "89.169.8.65:6379", Password: os.Getenv("REDIS_PASSWORD"), DB: 0})
+}
+
 func fillDBIfEmpty() {
 	if db == nil {
 		panic("DB is not connected")
@@ -277,7 +490,7 @@ func fillDBIfEmpty() {
 
 	// Create sample Users
 	users := []models.User{
-		{Name: "Alice Smith"},
+		{Name: "User is not logged in"},
 		{Name: "Bob Johnson"},
 		{Name: "Charlie Davis"},
 		{Name: "Alex Rusin"},
@@ -304,6 +517,7 @@ func fillDBIfEmpty() {
 
 func main() {
 	connectDB()
+	connectRedis()
 	fillDBIfEmpty()
 
 	var posts []models.Post
