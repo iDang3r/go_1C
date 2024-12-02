@@ -507,8 +507,38 @@ func (s *Service) DislikeComment(ctx context.Context, req *api.DislikeCommentReq
 }
 
 func connectDB() {
+	postgresHost, exists := os.LookupEnv("POSTGRES_HOST")
+	if !exists {
+		panic("postgresHost is not set")
+	}
+
+	postgresUser, exists := os.LookupEnv("POSTGRES_USER")
+	if !exists {
+		panic("postgresUser is not set")
+	}
+
+	postgresPassword, exists := os.LookupEnv("POSTGRES_PASSWORD")
+	if !exists {
+		panic("postgresPassword is not set")
+	}
+
+	postgresPort, exists := os.LookupEnv("POSTGRES_PORT")
+	if !exists {
+		panic("postgresPort is not set")
+	}
+
+	docker_url := "host=" + postgresHost +
+		" user=" + postgresUser +
+		" password=" + postgresPassword +
+		" port=" + postgresPort +
+		" sslmode=disable TimeZone=UTC"
+
+	fmt.Printf("Docker URL: %s\n", docker_url)
+
 	var err error
-	db, err = gorm.Open(postgres.Open("host=localhost dbname=postgres port=5432 sslmode=disable TimeZone=UTC"), &gorm.Config{})
+	db, err = gorm.Open(postgres.Open(
+		docker_url,
+	), &gorm.Config{})
 	if err != nil {
 		panic(err)
 	}
@@ -520,8 +550,14 @@ func connectDB() {
 }
 
 func connectRedis() {
+	redisURL, exists := os.LookupEnv("REDIS_URL")
+	if !exists {
+		panic("REDIS_URL is not set")
+	}
+
 	rctx = context.Background()
-	rdb = redis.NewClient(&redis.Options{Addr: "89.169.8.65:6379", Password: os.Getenv("REDIS_PASSWORD"), DB: 0})
+	rdb = redis.NewClient(&redis.Options{Addr: redisURL})
+	// rdb = redis.NewClient(&redis.Options{Addr: "89.169.8.65:6379", Password: os.Getenv("REDIS_PASSWORD"), DB: 0})
 }
 
 func fillDBIfEmpty() {

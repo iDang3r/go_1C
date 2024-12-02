@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres
+    container_name: database
+    restart: always
+    ports:
+      - '5432:5432'
+    environment:
+      - PGHOST=localhost
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+      - PGDATA=/data/postgres
+    volumes:
+        - postgres:/data/postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "postgres", "-U", "postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+      start_period: 2s
+    # networks:
+    #   - postgres
+
+  grpc-server:
+    build: .
+    container_name: grpc-server
+    ports:
+      - '50051:50051'
+      - '8090:8090'
+      - '9090:9090'
+    environment:
+      - REDIS_URL=redis:6379
+      - POSTGRES_HOST=database
+      - POSTGRES_DB=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    links:
+      - database
+    depends_on:
+      redis:
+        condition:
+            service_healthy
+      database:
+        condition:
+            service_healthy
+    # networks:
+    #   - postgres
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - ./db-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+# networks:
+#   postgres:
+#     driver: bridge
+
+volumes:
+  postgres:
+    driver: local
